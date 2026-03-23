@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google'
 import Sidebar from './components/Sidebar'
 import './globals.css'
 import { AuthProvider } from '@/context/AuthContext';
+import { FraudProvider } from '@/context/FraudContext';
 import { usePathname } from 'next/navigation';
 
 const inter = Inter({ subsets: ['latin'] })
@@ -24,7 +25,8 @@ export default function RootLayout({
       <body className={`${inter.className} bg-background text-foreground antialiased`} suppressHydrationWarning>
 >>>>>>> jiya
         <AuthProvider>
-          <div className="flex relative">
+          <FraudProvider>
+            <div className="flex relative">
             {/* Ambient Background Glows */}
             <div className="fixed top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[150px] -z-10 rounded-full" />
             <div className="fixed bottom-[-5%] right-[5%] w-[35%] h-[35%] bg-secondary/15 blur-[120px] -z-10 rounded-full" />
@@ -34,8 +36,9 @@ export default function RootLayout({
               {children}
             </main>
           </div>
-        </AuthProvider>
-      </body>
-    </html>
-  )
+        </FraudProvider>
+      </AuthProvider>
+    </body>
+  </html>
+)
 }

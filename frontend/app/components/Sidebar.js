@@ -12,13 +12,15 @@ import {
   LightBulbIcon, 
   CpuChipIcon,
   ArrowRightOnRectangleIcon,
-  UserCircleIcon
+  UserCircleIcon,
+  ShieldExclamationIcon
 } from '@heroicons/react/24/outline';
 
 const navItems = [
   { name: 'Home', href: '/', icon: HomeIcon, public: true },
   { name: 'Upload', href: '/upload', icon: ArrowUpTrayIcon, public: false },
   { name: 'Dashboard', href: '/dashboard', icon: PresentationChartBarIcon, public: false },
+  { name: 'Frauds', href: '/frauds', icon: ShieldExclamationIcon, public: false },
   { name: 'Transactions', href: '/transactions', icon: TableCellsIcon, public: false },
   { name: 'Explainability', href: '/explainability', icon: LightBulbIcon, public: false },
   { name: 'Pipeline', href: '/pipeline', icon: CpuChipIcon, public: false },
