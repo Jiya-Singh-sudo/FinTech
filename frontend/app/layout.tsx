@@ -18,7 +18,11 @@ export default function RootLayout({
 
   return (
     <html lang="en">
+<<<<<<< HEAD
       <body className={`${inter.className} bg-background text-foreground antialiased`}>
+=======
+      <body className={`${inter.className} bg-background text-foreground antialiased`} suppressHydrationWarning>
+>>>>>>> jiya
         <AuthProvider>
           <div className="flex relative">
             {/* Ambient Background Glows */}
