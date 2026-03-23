@@ -11,6 +11,7 @@ import {
   BeakerIcon
 } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
+import { useFraud } from '@/context/FraudContext';
 
 interface FileAsset {
   name: string;
@@ -20,13 +21,23 @@ interface FileAsset {
 
 export default function UploadPage() {
   const router = useRouter();
+  const { updateResults }: any = useFraud();
   const [file, setFile] = useState<FileAsset | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setError(null);
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
+      
+      // ✅ Basic Validation
+      if (!selectedFile.name.endsWith('.csv')) {
+        setError('Please upload a valid CSV file.');
+        return;
+      }
+
       setFile({
         name: selectedFile.name,
         size: (selectedFile.size / (1024 * 1024)).toFixed(2) + ' MB',
@@ -39,37 +50,51 @@ export default function UploadPage() {
     if (!file) return;
 
     setIsUploading(true);
+    setError(null);
 
     try {
       const formData = new FormData();
       if (file.raw) {
         formData.append('file', file.raw);
       } else {
-        // Fallback for demo simulation - create a mock CSV blob
-        const mockCSV = "transaction_id,amount,payment_method,timestamp,device_type,merchant_id,location\nTRX_SAMPLE,100,UPI,2026-03-23T00:00:00Z,Mobile,M_DEMO,IN";
-        const blob = new Blob([mockCSV], { type: 'text/csv' });
+        // Mock data for simulation
+        const headers = "transaction_id,amount,payment_method,timestamp,device_type,merchant_id,location\n";
+        const rows = Array.from({ length: 50 }, (_, i) => 
+          `TX_${1000 + i},${Math.floor(Math.random() * 80000)},UPI,2026-03-24T12:00:00Z,Mobile,M_DEMO,IN`
+        ).join("\n");
+        const blob = new Blob([headers + rows], { type: 'text/csv' });
         formData.append('file', blob, 'demo_simulation.csv');
       }
 
-      const res = await fetch('http://127.0.0.1:8000/predict', {
+      const res = await fetch('http://127.0.0.1:8000/predict/', {
         method: 'POST',
         body: formData,
       });
 
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || 'API Request Failed');
+      }
+
       const data = await res.json();
 
-      console.log('Fraud Results:', data);
+      // 🛑 LOG RESPONSE TO CONSOLE
+      console.log('--- 🧠 GUARDIA MODEL RESPONSE ---');
+      console.table(data.sample); // Log sample rows as a clean table
+      console.log('Total Results:', data);
+
+      // ✅ Update Global State (Zustand/Context)
+      updateResults(data);
 
       setIsUploading(false);
       setIsProcessing(true);
 
-      // 👉 store result (we'll use this next step)
-      localStorage.setItem('fraudResult', JSON.stringify(data));
+      // Redirect to midway processing screen
+      router.push('/processing');
 
-      router.push('/dashboard');
-
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message || 'Connection failed. Ensure backend is running.');
       setIsUploading(false);
     }
   };

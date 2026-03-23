@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import { 
   ShieldExclamationIcon, 
+  ShieldCheckIcon,
   MagnifyingGlassIcon, 
   UserIcon, 
   CpuChipIcon,
@@ -55,7 +56,50 @@ const explanationSignals = [
   { title: 'Rapid Sequence Velocity', icon: SparklesIcon, severity: 'Low', desc: 'This is the 3rd attempt within a 60-second window.', color: 'text-white/60' }
 ];
 
-export default function ExplainabilityPage() {
+import { useSearchParams } from 'next/navigation';
+import { useFraud } from '@/context/FraudContext';
+import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+
+function ExplainabilityContent() {
+  const { results }: any = useFraud();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const transactionId = searchParams.get('id');
+
+  useEffect(() => {
+    setMounted(true);
+    if (!results) {
+      router.push('/upload');
+    }
+  }, [results, router]);
+
+  if (!results) return null;
+
+  // Find the selected transaction or default to the first fraud/item
+  const allTransactions = results.predictions || results.sample || [];
+  let selectedTx;
+  
+  if (transactionId) {
+    selectedTx = allTransactions.find((s: any) => (s.transaction_id || `TRX_RADAR_${1000 + allTransactions.indexOf(s)}`) === transactionId);
+  }
+  
+  if (!selectedTx) {
+    selectedTx = allTransactions.find((s: any) => s.prediction === 'fraud' || s.prediction === 1) || allTransactions[0];
+  }
+
+  const isFraud = selectedTx.prediction === 'fraud' || selectedTx.prediction === 1;
+  const score = selectedTx.score || selectedTx.confidence || 0;
+  const currentTransactionId = selectedTx.transaction_id || `TRX_RADAR_${1000 + allTransactions.indexOf(selectedTx)}`;
+  const reason = selectedTx.reason || "Anomalous Velocity";
+
+  // Dynamic signals based on the transaction reason if available
+  const signals = [
+    { title: reason, icon: ExclamationCircleIcon, severity: isFraud ? 'High' : 'Low', desc: `System flag: ${reason}. Detected by neural inference.`, color: isFraud ? 'text-secondary' : 'text-green-500' },
+    ...explanationSignals.slice(1) // Keep some placeholder signals for visual density
+  ];
+
   return (
     <div className="p-8 lg:p-12 space-y-10">
       {/* Page Header */}
@@ -65,12 +109,14 @@ export default function ExplainabilityPage() {
             Explainable AI (XAI)
           </div>
           <h1 className="text-4xl lg:text-5xl font-bold font-space text-white">Model <span className="gradient-text">Reasoning</span> Flow</h1>
-          <p className="text-foreground/50 mt-2 font-medium italic italic">Transparency layer detailing why the AI flagged TRX_9421 as high-risk.</p>
+          <p className="text-foreground/50 mt-2 font-medium italic">Transparency layer detailing why the AI flagged {currentTransactionId} as {isFraud ? 'high-risk' : 'safe'}.</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="px-5 py-3 glass-card border-white/5 flex items-center gap-4">
             <div className="text-[10px] font-bold text-foreground/40 uppercase tracking-widest">Confidence Score</div>
-            <div className="text-2xl font-black text-green-500 font-space tracking-tight">99.4%</div>
+            <div className={`text-2xl font-black font-space tracking-tight ${isFraud ? 'text-red-500' : 'text-green-500'}`}>
+              {(score * 100).toFixed(1)}%
+            </div>
           </div>
         </div>
       </div>
@@ -79,26 +125,28 @@ export default function ExplainabilityPage() {
         {/* Left Column: Case Summary */}
         <div className="lg:col-span-8 space-y-8">
           {/* Main Anomaly Card */}
-          <div className="glass-card p-10 border-secondary/20 bg-secondary/5 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-secondary/10 rounded-full -mr-32 -mt-32 blur-3xl opacity-50" />
+          <div className={`glass-card p-10 border-white/5 relative overflow-hidden group ${isFraud ? 'bg-red-500/5' : 'bg-green-500/5'}`}>
+            <div className={`absolute top-0 right-0 w-64 h-64 rounded-full -mr-32 -mt-32 blur-3xl opacity-50 ${isFraud ? 'bg-red-500/10' : 'bg-green-500/10'}`} />
             <div className="flex flex-wrap items-center justify-between gap-8 relative z-10">
               <div className="flex items-center gap-8">
-                <div className="w-20 h-20 rounded-3xl bg-surface-bright flex items-center justify-center text-secondary shadow-[0_0_20px_rgba(255,55,95,0.3)]">
-                  <ShieldExclamationIcon className="w-10 h-10" />
+                <div className={`w-20 h-20 rounded-3xl bg-surface-bright flex items-center justify-center shadow-xl ${isFraud ? 'text-red-500 shadow-red-500/20' : 'text-green-500 shadow-green-500/20'}`}>
+                  {isFraud ? <ShieldExclamationIcon className="w-10 h-10" /> : <ShieldCheckIcon className="w-10 h-10" />}
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs font-bold text-secondary uppercase tracking-[0.2em] font-space">Critical Alert</div>
-                  <h3 className="text-3xl font-bold tracking-tight text-white font-space">Flagged Transaction TRX_9421</h3>
-                  <div className="flex items-center gap-4 text-sm text-foreground/40 font-medium italic">
-                    <span className="flex items-center gap-2 font-bold"><UserIcon className="w-4 h-4" /> USR_512</span>
+                  <div className={`text-xs font-bold uppercase tracking-[0.2em] font-space ${isFraud ? 'text-red-500' : 'text-green-500'}`}>
+                    {isFraud ? 'Abnormal Pattern' : 'Secure Transaction'}
+                  </div>
+                  <h3 className="text-3xl font-bold tracking-tight text-white font-space">Audit Reference {currentTransactionId}</h3>
+                  <div className="flex items-center gap-4 text-[10px] text-foreground/40 font-black uppercase tracking-widest">
+                    <span>ANALYST_01_REVIEW</span>
                     <span>•</span>
-                    <span className="text-white/80 font-bold">₹145,000 via UPI</span>
+                    <span className="text-white/80">Batch: {allTransactions.length} trx</span>
                   </div>
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-[10px] font-bold text-foreground/40 uppercase tracking-widest mb-1">Impact Level</div>
-                <div className="text-4xl font-black text-white font-space">0.942</div>
+                <div className="text-[10px] font-bold text-foreground/40 uppercase tracking-widest mb-1">Model Delta</div>
+                <div className="text-4xl font-black text-white font-mono">{score.toFixed(3)}</div>
               </div>
             </div>
           </div>
@@ -111,7 +159,7 @@ export default function ExplainabilityPage() {
                 <BoltIcon className="w-4 h-4 text-primary" />
               </div>
               <div className="space-y-6">
-                {explanationSignals.map((sig, idx) => (
+                {signals.map((sig, idx) => (
                   <div key={idx} className="flex gap-4 group">
                     <div className={`mt-1 p-2 rounded-lg bg-surface-bright border border-white/5 ${sig.color} group-hover:scale-110 transition-transform`}>
                       <sig.icon className="w-5 h-5 transition-transform" />
@@ -170,7 +218,7 @@ export default function ExplainabilityPage() {
                 <RadarChart data={behaviorRadarData}>
                   <PolarGrid stroke="rgba(255,255,255,0.05)" />
                   <PolarAngleAxis dataKey="subject" stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                  <Radar name="User TRX_9421" dataKey="user" stroke="#FF375F" fill="#FF375F" fillOpacity={0.4} />
+                  <Radar name={`User ${currentTransactionId}`} dataKey="user" stroke="#FF375F" fill="#FF375F" fillOpacity={0.4} />
                   <Radar name="Historical Baseline" dataKey="baseline" stroke="#00E5FF" fill="#00E5FF" fillOpacity={0.2} />
                   <Tooltip 
                     content={({ payload }) => (
@@ -211,5 +259,13 @@ export default function ExplainabilityPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ExplainabilityPage() {
+  return (
+    <Suspense fallback={<div className="p-12 text-white font-bold uppercase tracking-widest text-xs animate-pulse">Loading Reasoning Flow...</div>}>
+      <ExplainabilityContent />
+    </Suspense>
   );
 }
