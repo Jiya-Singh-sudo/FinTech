@@ -1,1 +1,1 @@
-from . import transactions, fraud, results
+from . import transactions, fraud, results, predict
