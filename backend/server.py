@@ -38,13 +38,13 @@ def verify_user(authorization: str = Header(None)):
     if MOCK_AUTH:
         # Mock user object for development
         return {"id": "demo-user-123", "email": "demo@guardia.ai"}
-        
+
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header missing")
 
     try:
         token = authorization.split(" ")[1] if " " in authorization else authorization
-        
+
         if not SUPABASE_URL:
              raise HTTPException(status_code=500, detail="SUPABASE_URL not configured in .env")
 
@@ -121,59 +121,59 @@ def preprocess(df):
         df['account_balance'] = df['account_balance'].apply(clean_amount)
     else:
         df['account_balance'] = 0.0
-        
+
     # Ensure transaction_timestamp exists
     if 'transaction_timestamp' not in df.columns:
         df['transaction_timestamp'] = pd.Timestamp("2024-01-01")
     else:
         df['transaction_timestamp'] = df['transaction_timestamp'].apply(parse_date)
         df['transaction_timestamp'] = df['transaction_timestamp'].fillna(pd.Timestamp("2024-01-01"))
-    
+
     df['user_id'] = df['user_id'].fillna("UNKNOWN") if 'user_id' in df.columns else "UNKNOWN"
     df['device_id'] = df['device_id'].fillna("UNKNOWN") if 'device_id' in df.columns else "UNKNOWN"
     df['user_location'] = df['user_location'].fillna("UNKNOWN") if 'user_location' in df.columns else "UNKNOWN"
     df['ip_address'] = df['ip_address'].fillna("UNKNOWN") if 'ip_address' in df.columns else "UNKNOWN"
-    
+
     if 'transaction_id' not in df.columns:
         df['transaction_id'] = ["TXN_UNK_" + str(i) for i in range(len(df))]
-        
+
     df = df.sort_values(by=['user_id', 'transaction_timestamp'])
-    
+
     user_avg = df.groupby('user_id')['transaction_amount'].transform('mean')
     user_std = df.groupby('user_id')['transaction_amount'].transform('std').fillna(1)
     df['amount_vs_user_avg'] = df['transaction_amount'] / user_avg.replace(0, 1)
     df['amount_zscore'] = (df['transaction_amount'] - user_avg) / user_std
-    
+
     df['seconds_since_prev'] = df.groupby('user_id')['transaction_timestamp'].diff().dt.total_seconds().fillna(86400)
-    
+
     # User's rolling logic
     df = df.set_index('transaction_timestamp')
     df['txn_count_last_5min'] = df.groupby('user_id').rolling('5min')['transaction_amount'].count().reset_index(level=0, drop=True)
     df = df.reset_index()
-    
+
     df['is_new_device_for_user'] = ~df.duplicated(subset=['user_id', 'device_id'])
     df['is_new_city_for_user'] = ~df.duplicated(subset=['user_id', 'user_location'])
-    
+
     df['device_user_count'] = df.groupby('device_id')['user_id'].transform('nunique')
     df['user_device_count'] = df.groupby('user_id')['device_id'].transform('nunique')
-    
+
     df['location_switch_flag'] = (df.groupby('user_id')['user_location'].shift(1) != df['user_location']).astype(int)
     df['user_city_count'] = df.groupby('user_id')['user_location'].transform('nunique')
-    
+
     df['ip_multi_user_flag'] = (df.groupby('ip_address')['user_id'].transform('nunique') > 1).astype(int)
     df['ip_anomaly'] = (df['ip_address'] == "UNKNOWN").astype(int)
     df['ip_is_private'] = df['ip_address'].astype(str).str.startswith(('192.168.', '10.', '172.')).astype(int)
-    
+
     df['hour'] = df['transaction_timestamp'].dt.hour
     df['is_night'] = ((df['hour'] < 6) | (df['hour'] > 22)).astype(int)
-    
+
     df['amount_to_balance_ratio'] = df['transaction_amount'] / df['account_balance'].replace(0, 1)
     df['device_location_combo'] = df.groupby(['device_id', 'user_location']).ngroup()
-    
+
     df['amount_velocity_interaction'] = df['transaction_amount'] / df['seconds_since_prev'].clip(lower=1)
     df['strong_combo_flag'] = 0.0
     df['anomaly_score'] = 0.0
-    
+
     features = [
         'amount_vs_user_avg', 'amount_zscore', 'txn_count_last_5min', 'seconds_since_prev',
         'is_new_device_for_user', 'is_new_city_for_user', 'device_user_count', 'user_device_count',
@@ -181,11 +181,11 @@ def preprocess(df):
         'ip_is_private', 'hour', 'is_night', 'amount_to_balance_ratio', 'device_location_combo',
         'amount_velocity_interaction', 'strong_combo_flag', 'anomaly_score'
     ]
-    
+
     for c in features:
         if df[c].dtype == bool:
             df[c] = df[c].astype(float)
-            
+
     X = df[features].fillna(0)
     return X, df['transaction_id'].tolist()
 
@@ -203,23 +203,23 @@ def health():
 async def predict_endpoint(file: UploadFile = File(...), user: dict = Depends(verify_user)):
     contents = await file.read()
     string_data = contents.decode("utf-8")
-    
+
     try:
         df = pd.read_csv(io.StringIO(string_data))
         print(f"📊 Received file with {len(df)} rows.")
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": "Invalid CSV file"})
-        
+
     try:
         X, tx_ids = preprocess(df.copy())
         print(f"🛠️ Preprocessed into {X.shape[1]} features.")
-        
+
         preds = model.predict(X)
         prob_matrix = np.asarray(model.predict_proba(X))
         probs = prob_matrix[:, 1]
-        
+
         print(f"🔮 Model inference complete. Detected {int(sum(preds))} frauds.")
-        
+
         results = []
         for i, (tx_id, p, prob) in enumerate(zip(tx_ids, preds, probs)):
             status = 'fraud' if p == 1 else 'legitimate'
@@ -240,18 +240,18 @@ async def predict_endpoint(file: UploadFile = File(...), user: dict = Depends(ve
                     reason = "Transaction during unusual hours"
                 else:
                     reason = "Model detected anomalous patterns"
-                    
+
             results.append({
-                "transaction_id": tx_id, 
+                "transaction_id": tx_id,
                 "prediction": status,
                 "score": float(prob),
                 "reason": reason
             })
-            
+
         # Summary metrics for dashboard compatibility
         fraud_detected = int(sum(preds))
         total_transactions = int(len(df))
-        
+
         return {
             "predictions": results,
             "total_transactions": total_transactions,

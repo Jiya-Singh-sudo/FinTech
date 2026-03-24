@@ -185,7 +185,7 @@ export default function UploadPage() {
         </div>
 
         {/* Info Sidebar */}
-        <div className="space-y-6">
+        {/* <div className="space-y-6">
           <div className="glass-card p-6 border-white/5 space-y-6">
             <div className="flex items-center gap-3 text-white border-b border-white/5 pb-4">
               <InformationCircleIcon className="w-5 h-5 text-primary" />
@@ -229,7 +229,7 @@ export default function UploadPage() {
               ))}
             </div>
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );

@@ -17,7 +17,12 @@ export default function ProcessingPage() {
 
     // Simulate analysis delay
     const timer = setTimeout(() => {
-      router.push('/dashboard');
+      // Automatic redirect to Explainability page if any fraud is detected
+      if (results.fraud_detected > 0) {
+        router.push('/explainability');
+      } else {
+        router.push('/dashboard');
+      }
     }, 2500);
 
     return () => clearTimeout(timer);

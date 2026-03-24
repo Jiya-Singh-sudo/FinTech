@@ -1,0 +1,36 @@
+﻿Loading features from c:\Users\ayij3\Desktop\JiyaProjects\FinTech\backend\train\features_sample.csv
+Generating weak labels based on discovered behavioral patterns...
+Generated 58 initial weak fraud labels (4.07% of data)
+Splitting dataset 80/20...
+
+Training Initial Classifier ...
+
+--- Model Evaluation (vs Weak Labels) ---
+Precision: 1.0000
+Recall:    0.6667
+F1 Score:  0.8000
+              precision    recall  f1-score   support
+
+           0       0.99      1.00      0.99       274
+           1       1.00      0.67      0.80        12
+
+    accuracy                           0.99       286
+   macro avg       0.99      0.83      0.90       286
+weighted avg       0.99      0.99      0.98       286
+
+
+Top 5 Predictive Features:
+            Feature  Importance
+     has_invalid_ip    0.226722
+  location_mismatch    0.120746
+         device_seq    0.119686
+      is_new_device    0.105916
+time_since_last_txn    0.069444
+
+--- Self-Learning Demonstration ---
+Simulating ingestion of 'unlabelled' novel data...
+Discovered 0 highly confident NEW fraud patterns.
+Discovered 262 highly confident NEW legit patterns.
+In a production system, these high-confidence pseudo-labels are injected back into the training pool (Self-Training) to learn continuously without human intervention.
+
+Model saved to c:\Users\ayij3\Desktop\JiyaProjects\FinTech\backend\src\fraud_model.pkl

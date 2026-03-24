@@ -105,8 +105,13 @@ function ExplainabilityContent() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/5 pb-10">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold uppercase tracking-widest mb-3">
-            Explainable AI (XAI)
+          <div className="flex items-center gap-4 mb-3">
+            <Link href="/dashboard" className="text-[10px] font-bold text-white/50 hover:text-white flex items-center gap-2 uppercase tracking-widest transition-colors border border-white/10 px-3 py-1 rounded-full hover:bg-white/5">
+              <ArrowRightIcon className="w-3 h-3 rotate-180" /> Dashboard
+            </Link>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold uppercase tracking-widest">
+              Explainable AI (XAI)
+            </div>
           </div>
           <h1 className="text-4xl lg:text-5xl font-bold font-space text-white">Model <span className="gradient-text">Reasoning</span> Flow</h1>
           <p className="text-foreground/50 mt-2 font-medium italic">Transparency layer detailing why the AI flagged {currentTransactionId} as {isFraud ? 'high-risk' : 'safe'}.</p>

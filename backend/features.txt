@@ -1,0 +1,17 @@
+clean_amount
+merchant_category
+device_type
+payment_method
+account_balance
+transaction_status
+location_mismatch
+hour_of_day
+day_of_week
+is_unusual_hour
+time_since_last_txn
+is_high_velocity
+user_avg_spend
+amount_vs_avg_ratio
+device_seq
+is_new_device
+has_invalid_ip

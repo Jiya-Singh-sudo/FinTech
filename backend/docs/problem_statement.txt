@@ -1,0 +1,51 @@
+
+
+
+You are provided with a dataset of financial transactions extracted from a real-world-style banking system. The data is intentionally messy, inconsistent, and incomplete — because that is what real data looks like.
+Your objective is to build an end-to-end fraud detection system that:
+
+
+
+This challenge mirrors the exact problems faced by fraud detection teams at banks, payment processors, and FinTech companies every day:
+
+
+You will receive a single CSV file: 
+participant_dataset.csv  — containing 100,000+ transaction records across 15 columns.
+
+Column Reference
+
+
+
+The dataset contains deliberate real-world imperfections. These are not errors to ignore — they are central to the challenge. Each one must be identified, quantified, and resolved before meaningful analysis is possible.
+
+
+
+
+
+
+Your submission must demonstrate capability across five stages. Each stage builds on the previous — a weak foundation in Stage 1 will compromise every stage that follows.
+
+
+
+
+
+
+
+Signals worth investigating
+The following are directions for exploration — not a complete list, and not a guarantee that all of them are present in the data:
+
+
+Your submission must include all of the following:
+
+
+
+
+
+Most teams will clean the data and train a model. The best teams will go further:
+
+
+Suggested approach for the first hour:
+
+
+
+

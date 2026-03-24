@@ -1,0 +1,112 @@
+
+
+
+You are provided with a dataset of financial transactions extracted from a real-world-style banking system. The data is intentionally messy, inconsistent, and incomplete — because that is what real data looks like.
+Your objective is to build an end-to-end fraud detection system that:
+
+
+
+This challenge mirrors the exact problems faced by fraud detection teams at banks, payment processors, and FinTech companies every day:
+
+
+You will receive a single CSV file: 
+participant_dataset.csv  — containing 100,000+ transaction records across 15 columns.
+
+Column Reference
+
+
+
+The dataset contains deliberate real-world imperfections. These are not errors to ignore — they are central to the challenge. Each one must be identified, quantified, and resolved before meaningful analysis is possible.
+
+
+
+
+
+
+Your submission must demonstrate capability across five stages. Each stage builds on the previous — a weak foundation in Stage 1 will compromise every stage that follows.
+
+
+
+
+
+
+
+Signals worth investigating
+The following are directions for exploration — not a complete list, and not a guarantee that all of them are present in the data:
+
+
+Your submission must include all of the following:
+
+
+
+
+
+Most teams will clean the data and train a model. The best teams will go further:
+
+
+Suggested approach for the first hour:
+
+
+
+
+
+FINTECH FRAUD DETECTION CHALLENGE  Problem Statement  Real-World Transaction Fraud Detection · Data Engineering · Machine Learning
+🏦  Banking & FinTech | 🔍  Anomaly Detection | 🤖  ML & Data Engineering
+Fraud costs the global financial industry over $485 billion annually. Behind every fraudulent transaction is a pattern — a subtle deviation in behaviour, location, timing, or amount that, when correctly identified, protects real people from financial harm. Your challenge is to find those patterns. You are not here to run a model on clean data. You are here to engineer a solution from noise.
+01 | Objective
+✦  Cleans and standardises the raw dataset ✦  Engineers features that capture user behaviour ✦  Detects anomalous and fraudulent transactions | ✦  Produces explainable, interpretable outputs ✦  Quantifies data quality issues it encountered ✦  Demonstrates reasoning, not just prediction
+What success looks like A winning solution does not simply train a classifier and report accuracy. It demonstrates deep understanding of the data — why certain transactions are suspicious, what combinations of signals indicate fraud, and how the pipeline handles real-world data imperfections.
+02 | Real-World Relevance
+Industry Problem →  Transaction data arrives from dozens of systems in different formats →  Timestamps, amounts, and locations are recorded inconsistently →  Duplicate entries appear due to retry logic and system failures →  IP addresses and device IDs are frequently missing or malformed →  Fraud patterns evolve and are rarely disclosed in advance | Your Challenge Equivalent ✓  Amount field contains ₹-symbols, INR suffixes, plain strings, and nulls ✓  Seven distinct timestamp formats present in a single column ✓  Duplicate rows and duplicate transaction IDs must be identified ✓  IP address column contains malformed and structurally invalid entries ✓  Fraudulent transactions exist in the data — discovering the patterns is your challenge.
+03 | The Dataset
+100,000+ Transactions | 15 Columns | 2,000 Unique Users | 2 Years Transaction History
+Column Name | Type | Description
+transaction_id | String | Unique identifier for each transaction. May contain duplicates.
+user_id | String | Anonymised user identifier. Multiple transactions per user.
+transaction_amount | Mixed | Amount of the transaction. Stored in inconsistent formats across rows.
+transaction_timestamp | Mixed | Date and time of transaction. Stored in multiple formats.
+user_location | String | City where the user initiated the transaction. Contains aliases and casing variants.
+merchant_location | String | City where the merchant is registered. May differ from user location.
+merchant_category | String | Type of merchant (e.g. Electronics, Travel, Grocery). May contain noise.
+device_id | String | Identifier for the device used. May be absent for some transactions.
+device_type | Enum | Broad device class: mobile, web, or ATM.
+payment_method | Enum | Method used: UPI, Card, NetBanking, Wallet, BNPL, EMI.
+account_balance | Numeric | User's account balance at time of transaction. May have missing values.
+transaction_status | Enum | Outcome of the transaction: success, failed, or pending.
+ip_address | String | IP address of the device. Some entries are malformed or missing.
+amt | Mixed | Shadow column — appears for a subset of rows when the primary amount field is absent.
+Note on the amt column Some rows contain a secondary column called  amt  instead of (or alongside)  transaction_amount . This reflects real-world schema drift — where different pipeline versions log the same field under different names. Your solution must account for both.
+04 | Data Challenges You Must Solve
+💰  Inconsistent Amount Formats The transaction_amount column stores monetary values in at least six distinct formats. Parsing it naively will result in data loss or incorrect numeric values. Examples:  ₹3,200  |  3200 INR  |  Rs 3200  |  3200.0  |  3200.0000  |  (null)
+🕐  Multiple Timestamp Formats The transaction_timestamp column contains seven different date-time representations, including Unix epoch integers, ISO 8601 strings, textual formats, and locale-specific formats. Some entries have no time component at all. Examples:  2024-02-14T07:27:39  |  27/01/2024 07:53  |  1708320459  |  February 14, 2024 07:27 AM  |  05-Feb-2024
+📍  Location Inconsistencies City names are stored in multiple forms — full names, abbreviations, IATA codes, historical names, and various casings. Treating each variant as a distinct city will produce incorrect geographic analysis. Examples:  Mumbai  |  mumbai  |  MUMBAI  |  BOM  |  Bombay  |  mUMBAI  |  MUM
+📋  Duplicate Records Some transaction rows appear more than once in the dataset. Additionally, the same transaction_id may appear with slightly different values. Both forms of duplication must be detected and handled. Examples:  Exact row duplicates  |  Duplicate transaction_ids with differing field values
+🌐  Missing Values & Invalid IPs Multiple columns contain missing values represented in different ways. The ip_address column additionally contains structurally invalid entries that pass a naive presence check but fail IP validation. Examples:  ""  |  NA  |  N/A  |  nan  |  NULL  |  -  |  999.168.1.1  |  192.168..1  |  not_an_ip
+05 | What Your System Must Do
+1 | Data Cleaning & Standardisation Parse all amount formats into a single numeric field. Unify all timestamp formats into a common datetime. Normalise city names to canonical values. Remove duplicate records. Identify and handle missing values per column. Flag and resolve invalid IP addresses.
+2 | Exploratory Data Analysis Quantify the data quality issues you found. Profile transaction behaviour per user, device, location, time-of-day, and payment method. Identify statistical anomalies in spending patterns. Visualise distributions and relationships between fields.
+3 | Feature Engineering Derive features that capture behavioural context — not just raw column values. Consider per-user baselines, sequence patterns, velocity metrics, device novelty, geographic consistency, and temporal anomalies. Features must be engineered from the data, not assumed.
+4 | Fraud Detection Model Train a machine learning model on your engineered features to classify transactions as fraudulent or legitimate. Demonstrate a proper train-test split. Report precision, recall, and F1 score. A model that achieves high accuracy by predicting 'not fraud' for everything will score zero.
+5 | Explainability & Insights Explain why your model flags specific transactions. Identify which features are most predictive. Describe the fraud patterns you discovered in the data. A solution that cannot explain its predictions is not production-ready.
+06 | Fraud Patterns in the Data
+Important The fraud patterns present in this dataset are  not disclosed  to participants. Discovering them is part of the challenge. What we can tell you is that real-world fraud is never obvious — it rarely appears in a single column.  Effective fraud detection requires reasoning across multiple fields simultaneously. A transaction that looks normal in isolation may be clearly suspicious when viewed in the context of the user's history, device, location, and the time it occurred.  Ask yourself: what combination of signals, taken together, would make a transaction hard to explain as legitimate?
+Transactional Signals ·  Sudden large transactions relative to user history ·  Micro-transactions (very small amounts) on specific payment methods ·  Transactions with zero or missing amounts ·  Unusually high-value transactions in certain merchant categories ·  Transactions with status = success despite unusual context | Behavioural Signals ·  Transactions from devices not previously associated with a user ·  Geographic location inconsistent with user's established pattern ·  Multiple transactions from the same device across different accounts ·  Transactions at unusual hours combined with elevated amounts ·  Rapid successive transactions within seconds from the same user
+07 | Deliverables
+# | Deliverable | What to include
+1 | Jupyter Notebook / Script | Complete code for data cleaning, EDA, feature engineering, and model training. Code must be reproducible — running it end-to-end should produce your results.
+2 | EDA Report | Display of core transaction metrics, data quality findings (duplicate counts, missing value counts per column, invalid IP count), amount statistics, and behavioural analysis by merchant, device, payment method, and time of day.
+3 | Feature Engineering Documentation | Description of every feature you created, how it was derived, and why you believe it carries fraud signal. Features must go beyond raw column values.
+4 | Model Summary | Model architecture, training approach, train-test split methodology, and performance metrics: Precision, Recall, F1 Score, and total predicted fraud count.
+5 | Fraud Insights | A written explanation of the fraud patterns you discovered. What combinations of signals were most predictive? What surprised you? What would you add to the model with more time?
+08 | Rules & Constraints
+✅  You may use ✓  Python or R for all analysis and modelling ✓  Any open-source ML library (scikit-learn, XGBoost, LightGBM, etc.) ✓  Any visualisation library (matplotlib, seaborn, plotly, etc.) ✓  Generative AI tools for code assistance and documentation drafting ✓  External datasets for reference only (not for importing additional fraud indicators) ✓  Pre-trained embeddings or models for feature extraction only | ⛔  You may not ✗  Use or access any external labels or ground-truth fraud indicators not present in the dataset ✗  Submit a solution that only applies rule-based thresholds — a trained ML model is required ✗  Share model predictions or internal findings between teams ✗  Hardcode ground-truth values obtained outside the dataset ✗  Submit results without the supporting code that produced them
+On the use of AI tools You are permitted to use AI assistants for code generation, debugging, and writing. However, judges will ask you to explain every part of your pipeline during the presentation. If you cannot explain a design decision, it will not receive credit. Reasoning is the skill being evaluated — not the ability to prompt an AI.
+09 | What Separates Top Teams
+Average submission —  Drops nulls instead of imputing or flagging them —  Treats city name variants as separate cities —  Uses only individual column values as features —  Reports a single accuracy number —  Cannot explain why individual transactions were flagged —  Misses the amt shadow column entirely | Top submission ★  Quantifies every data quality issue with exact counts ★  Builds a city normalisation lookup from the data itself ★  Engineers sequence, velocity, and cross-user features ★  Reports precision, recall, and F1 separately; explains the tradeoff ★  Provides transaction-level explanations using SHAP or similar ★  Merges amt into transaction_amount before any analysis
+10 | Getting Started
+① | Load the dataset and inspect the raw data Print df.head(), df.dtypes, df.shape. Look at the transaction_amount and transaction_timestamp columns carefully — they will surprise you.
+② | Audit data quality before touching anything Count nulls, count duplicates, count unique values per column. Build a data quality report first — it will guide everything that follows.
+③ | Parse amounts and timestamps Write a robust parser for each. Test it on every format you can find. Any row where parsing fails is a row you will lose from your model.
+④ | Normalise locations List all unique values in user_location. Build a mapping to canonical city names. This will dramatically improve the quality of geographic features.
+⑤ | Start building user profiles For each user, compute their average spend, most common device, home city, and preferred payment method from their transaction history. These baselines power the most valuable fraud features.
+Good luck.  The best fraud detection system is not the one with the most complex model. It is the one built by the team that understood the data the deepest.  FinTech Fraud Detection Challenge  ·  participant_dataset.csv

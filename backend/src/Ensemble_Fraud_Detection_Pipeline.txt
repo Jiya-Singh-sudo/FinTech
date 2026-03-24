@@ -1,0 +1,192 @@
+# Cell 1: Environment Setup and Imports
+import pandas as pd
+import numpy as np
+import re
+from datetime import datetime
+import ipaddress
+import warnings
+from sklearn.model_selection import train_test_split
+from lightgbm import LGBMClassifier
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
+import joblib
+
+warnings.filterwarnings('ignore')
+
+
+# Cell 2: Load and Parse Messy Data
+# NOTE: Upload your dataset to Colab and ensure the path matches below.
+DATA_PATH = "sample.csv" 
+print(f"Loading data from {DATA_PATH}...")
+df = pd.read_csv(DATA_PATH)
+
+def parse_amount(row):
+    amt_val = str(row.get('amt', 'nan'))
+    txn_val = str(row.get('transaction_amount', 'nan'))
+    for val in [txn_val, amt_val]:
+        if val.lower() != 'nan' and val != '':
+            match = re.search(r'[\d,]+\.?\d*', val)
+            if match:
+                try: return float(match.group(0).replace(',', ''))
+                except ValueError: pass
+    return 0.0
+
+df['transaction_amount'] = df.apply(parse_amount, axis=1)
+
+def parse_ts(x):
+    if pd.isna(x): return pd.NaT
+    x = str(x).strip()
+    if re.match(r'^\d{2}-\d{2}-\d{2}:\d{2}:\d{2}\.\d{3}$', x):
+        try:
+            dd, rest = x.split('-', 1)
+            mm, time_part = rest.split('-', 1)
+            return pd.to_datetime(f"2024-{mm.zfill(2)}-{dd.zfill(2)} {time_part}", format="%Y-%m-%d %H:%M:%S.%f")
+        except: pass
+    if x.isdigit() and len(x) >= 10:
+        try:
+            return pd.to_datetime(int(x), unit='s') if int(x) < 2e9 else pd.to_datetime(int(x), unit='ms')
+        except pd.errors.OutOfBoundsDatetime: return pd.NaT
+        except: pass
+    try: return pd.to_datetime(x, format='mixed', dayfirst=True)
+    except: return pd.NaT
+
+df['ts'] = df['transaction_timestamp'].apply(parse_ts)
+df = df.dropna(subset=['ts']).sort_values(['user_id', 'ts']).reset_index(drop=True)
+print(f"Data parsed successfully. {len(df)} transactions ready for feature engineering.")
+
+
+# Cell 3: Feature Engineering (Base + New Requirements)
+df['account_balance'] = pd.to_numeric(df['account_balance'], errors='coerce').fillna(0)
+
+# Velocity
+df['seconds_since_prev'] = df.groupby('user_id')['ts'].diff().dt.total_seconds().fillna(999999)
+df['fast_txn_flag'] = (df['seconds_since_prev'] < 60).astype(int)
+df['txn_count_last_5min'] = df.groupby('user_id')['seconds_since_prev'].transform(lambda x: (x < 300).cumsum())
+df['velocity_flag'] = (df['txn_count_last_5min'] >= 2).astype(int)
+
+# Moving Averages & Spikes
+df['user_avg_amount'] = df.groupby('user_id')['transaction_amount'].transform(lambda x: x.expanding().mean().shift(1)).fillna(df['transaction_amount'].median())
+df['amount_vs_user_avg'] = df['transaction_amount'] / (df['user_avg_amount'] + 1)
+df['high_amount_flag'] = (df['amount_vs_user_avg'] > 3).astype(int)
+df['extreme_amount_flag'] = (df['amount_vs_user_avg'] > 6).astype(int)
+
+df['rolling_avg_3'] = df.groupby('user_id')['transaction_amount'].transform(lambda x: x.rolling(3, min_periods=1).mean())
+df['spike_flag'] = (df['transaction_amount'] > 2 * df['rolling_avg_3']).astype(int)
+df['amount_to_balance_ratio'] = df['transaction_amount'] / (df['account_balance'] + 1)
+
+# Devices & Locations
+df['is_new_device_for_user'] = df.groupby('user_id')['device_id'].transform(lambda x: ~x.duplicated()).astype(int)
+df['user_device_count'] = df['user_id'].map(df.groupby('user_id')['device_id'].nunique())
+df['device_user_count'] = df['device_id'].map(df.groupby('device_id')['user_id'].nunique())
+
+df['is_new_city_for_user'] = df.groupby('user_id')['user_location'].transform(lambda x: ~x.duplicated()).astype(int)
+df['device_location_combo'] = (df['is_new_device_for_user'] & df['is_new_city_for_user']).astype(int)
+
+# IPs
+def clean_ip(ip):
+    if pd.isna(ip) or str(ip).strip() in ['', 'null', 'nan']: return None
+    match = re.match(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$', str(ip).strip())
+    if match and all(0 <= int(o) <= 255 for o in match.groups()): return ip
+    return None
+
+df['ip_clean'] = df['ip_address'].apply(clean_ip)
+df['ip_anomaly'] = df['ip_clean'].isna().astype(int)
+df['ip_multi_user'] = df['ip_clean'].map(df.groupby('ip_clean')['user_id'].nunique()).fillna(1)
+df['ip_multi_user_flag'] = (df['ip_multi_user'] > 3).astype(int) 
+
+df['hour'] = df['ts'].dt.hour
+df['is_night'] = ((df['hour'] >= 0) & (df['hour'] <= 5)).astype(int)
+
+print("Engineered Base Features.")
+
+
+# Cell 4: Ground Truth & Isolation Forest (iso_score)
+df['fraud_score'] = (
+    3*df['extreme_amount_flag'] +
+    2*df['high_amount_flag'] +
+    2*df['velocity_flag'] +
+    1*df['fast_txn_flag'] +
+    2*df['is_new_device_for_user'] +
+    2*df['is_new_city_for_user'] +
+    2*df['device_location_combo'] +
+    2*df['ip_multi_user_flag'] +
+    1*df['ip_anomaly'] +
+    1*(df['device_user_count'] > 5).astype(int) +
+    1*(df['amount_to_balance_ratio'] > 0.7).astype(int)
+)
+df['strong_combo_flag'] = ((df['is_new_device_for_user'] == 1) & (df['is_new_city_for_user'] == 1)).astype(int)
+df['fraud_score'] += 3 * df['strong_combo_flag']
+
+df['fraud_label'] = (df['fraud_score'] >= 6).astype(int)
+print(f"Ground Truth Frauds (Score >= 6) detected: {df['fraud_label'].sum()}")
+
+print("Training Isolation Forest Anomaly Scorer...")
+iso_features = ['transaction_amount', 'amount_vs_user_avg', 'txn_count_last_5min', 'seconds_since_prev']
+X_iso = df[iso_features].fillna(0)
+iso = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+df['iso_score'] = (iso.fit_predict(X_iso) == -1).astype(int)
+
+
+# Cell 5: Ensemble Training & Evaluation (LGBM + Random Forest)
+FEATURES = [
+    'amount_vs_user_avg', 'txn_count_last_5min', 'seconds_since_prev',
+    'is_new_device_for_user', 'is_new_city_for_user', 'device_user_count',
+    'user_device_count', 'ip_multi_user_flag', 'ip_anomaly', 'hour',
+    'is_night', 'amount_to_balance_ratio', 'device_location_combo',
+    'strong_combo_flag', 'iso_score', 'rolling_avg_3', 'spike_flag'
+]
+
+X = df[FEATURES].fillna(0)
+y = df['fraud_label']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+print("Training LightGBM [Weight: 0.6]...")
+lgbm = LGBMClassifier(n_estimators=300, learning_rate=0.05, num_leaves=15, max_depth=5, class_weight='balanced', random_state=42)
+lgbm.fit(X_train, y_train)
+
+print("Training RandomForest [Weight: 0.4]...")
+rf = RandomForestClassifier(n_estimators=200, max_depth=10, class_weight='balanced', random_state=42)
+rf.fit(X_train, y_train)
+
+lgbm_probs = lgbm.predict_proba(X_test)[:, 1]
+rf_probs = rf.predict_proba(X_test)[:, 1]
+
+ensemble_probs = (0.6 * lgbm_probs) + (0.4 * rf_probs)
+ensemble_preds = (ensemble_probs >= 0.4).astype(int)
+
+print("\n=== ENSEMBLE MODEL METRICS ===")
+print(f"Accuracy:  {accuracy_score(y_test, ensemble_preds):.4f}")
+print(f"Precision: {precision_score(y_test, ensemble_preds):.4f}")
+print(f"Recall:    {recall_score(y_test, ensemble_preds):.4f}")
+print(f"F1 Score:  {f1_score(y_test, ensemble_preds):.4f}")
+print("\nClassification Report:")
+print(classification_report(y_test, ensemble_preds))
+
+
+# Cell 6: Fraud Categorization & Result Export
+df['lgbm_prob'] = lgbm.predict_proba(X)[:, 1]
+df['rf_prob'] = rf.predict_proba(X)[:, 1]
+df['ensemble_fraud_prob'] = (0.6 * df['lgbm_prob']) + (0.4 * df['rf_prob'])
+df['final_fraud'] = (df['ensemble_fraud_prob'] >= 0.4).astype(int)
+
+def fraud_type(row):
+    if row['final_fraud'] == 0: return "Not Fraud"
+    if row['amount_vs_user_avg'] > 5: return "High Amount Fraud"
+    if row['txn_count_last_5min'] >= 3 or row['spike_flag'] == 1: return "Velocity Fraud"
+    if row['is_new_device_for_user'] and row['is_new_city_for_user']: return "Device + Location Fraud"
+    if row['is_new_device_for_user']: return "Device Fraud"
+    if row['is_new_city_for_user']: return "Location Fraud"
+    if row['ip_multi_user_flag']: return "Shared Device/IP Fraud"
+    return "Mixed Fraud"
+
+df['fraud_type'] = df.apply(fraud_type, axis=1)
+
+print("\n=== DETECTED FRAUDS ===")
+print(df[df['final_fraud'] == 1]['fraud_type'].value_counts())
+
+df.to_csv("ensemble_fraud_output.csv", index=False)
+joblib.dump(lgbm, "lgbm_ensemble.pkl")
+joblib.dump(rf, "rf_ensemble.pkl")
+print("\nResults saved to 'ensemble_fraud_output.csv' and models saved to .pkl!")
+

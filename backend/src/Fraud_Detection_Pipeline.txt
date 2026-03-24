@@ -1,0 +1,175 @@
+# Cell 1: Environment Setup and Imports
+import pandas as pd
+import numpy as np
+import re
+from datetime import datetime
+import ipaddress
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report, precision_score, recall_score, f1_score
+import joblib
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# Cell 2: Data Cleaning Functions
+def parse_amount(row):
+    amt_val = str(row.get('amt', 'nan'))
+    txn_val = str(row.get('transaction_amount', 'nan'))
+    for val in [txn_val, amt_val]:
+        if val.lower() != 'nan' and val != '':
+            match = re.search(r'[\d,]+\.?\d*', val)
+            if match:
+                try:
+                    num_str = match.group(0).replace(',', '')
+                    return float(num_str)
+                except ValueError:
+                    pass
+    return np.nan
+
+def parse_timestamp(ts):
+    if pd.isna(ts): return pd.NaT
+    ts = str(ts).strip()
+    if ts == 'nan' or ts == '': return pd.NaT
+    if ts.isdigit() and len(ts) >= 10:
+        try: return pd.to_datetime(int(ts), unit='s')
+        except: pass
+    if ts.isdigit() and len(ts) == 14:
+        try: return pd.to_datetime(ts, format='%Y%m%d%H%M%S')
+        except: pass
+    try: return pd.to_datetime(ts, format='mixed', dayfirst=True)
+    except: pass
+    try: return pd.to_datetime(ts, format='mixed')
+    except: return pd.NaT
+
+def normalize_location(loc):
+    if pd.isna(loc): return "unknown"
+    loc = str(loc).lower().strip()
+    loc = re.sub(r'[^a-z]', '', loc)
+    if not loc: return "unknown"
+    mapping = {'bom': 'mumbai', 'bombay': 'mumbai', 'del': 'delhi', 'newdelhi': 'delhi',
+               'jai': 'jaipur', 'maa': 'chennai', 'madras': 'chennai', 'blr': 'bangalore',
+               'bengaluru': 'bangalore', 'pnq': 'pune', 'ccu': 'kolkata', 'calcutta': 'kolkata',
+               'lko': 'lucknow', 'amd': 'ahmedabad', 'hyd': 'hyderabad'}
+    return mapping.get(loc, loc)
+
+def is_valid_ip(ip):
+    try:
+        if pd.isna(ip) or str(ip).lower() in ['nan', 'na', 'n/a', '', 'null', '-']: return False
+        ipaddress.ip_address(str(ip))
+        return True
+    except ValueError: return False
+
+
+# Cell 3: Load and Clean Data
+# NOTE: Upload your dataset to Colab and ensure the path matches below.
+# E.g. DATA_PATH = "participant_dataset.csv"
+DATA_PATH = "sample.csv" 
+print(f"Loading data from {DATA_PATH}...")
+df = pd.read_csv(DATA_PATH)
+
+df['clean_amount'] = df.apply(parse_amount, axis=1)
+df['clean_timestamp'] = df['transaction_timestamp'].apply(parse_timestamp)
+df['clean_user_location'] = df['user_location'].apply(normalize_location)
+df['clean_merchant_location'] = df['merchant_location'].apply(normalize_location)
+df['valid_ip'] = df['ip_address'].apply(lambda x: str(x) if is_valid_ip(x) else 'missing')
+df = df.drop_duplicates()
+
+columns_to_keep = [
+    'transaction_id', 'user_id', 'clean_amount', 'clean_timestamp',
+    'clean_user_location', 'clean_merchant_location', 'merchant_category',
+    'device_id', 'device_type', 'payment_method', 'account_balance',
+    'transaction_status', 'valid_ip'
+]
+df_clean = df[columns_to_keep].copy()
+
+df_clean['clean_amount'] = df_clean['clean_amount'].fillna(0.0)
+df_clean['account_balance'] = pd.to_numeric(df_clean['account_balance'], errors='coerce').fillna(0.0)
+df_clean = df_clean.dropna(subset=['clean_timestamp'])
+
+for col in ['merchant_category', 'device_id', 'device_type', 'payment_method', 'transaction_status']:
+    df_clean[col] = df_clean[col].fillna('unknown').astype(str).str.lower().str.strip()
+
+print("Data Cleaning Complete. Remaining Rows:", len(df_clean))
+
+
+# Cell 4: Feature Engineering
+df_clean = df_clean.sort_values(by=['user_id', 'clean_timestamp']).reset_index(drop=True)
+
+df_clean['location_mismatch'] = (df_clean['clean_user_location'] != df_clean['clean_merchant_location']).astype(int)
+df_clean['hour_of_day'] = df_clean['clean_timestamp'].dt.hour
+df_clean['is_unusual_hour'] = df_clean['hour_of_day'].apply(lambda x: 1 if 1 <= x <= 5 else 0)
+
+df_clean['time_since_last_txn'] = df_clean.groupby('user_id')['clean_timestamp'].diff().dt.total_seconds().fillna(2592000)
+df_clean['is_high_velocity'] = (df_clean['time_since_last_txn'] < 60).astype(int)
+
+df_clean['user_avg_spend'] = df_clean.groupby('user_id')['clean_amount'].transform(lambda x: x.expanding().mean().shift(1))
+df_clean['user_avg_spend'] = df_clean['user_avg_spend'].fillna(df_clean['clean_amount'].median())
+df_clean['amount_vs_avg_ratio'] = df_clean['clean_amount'] / (df_clean['user_avg_spend'] + 1e-5)
+
+df_clean['device_seq'] = df_clean.groupby(['user_id', 'device_id']).cumcount() + 1
+df_clean['is_new_device'] = (df_clean['device_seq'] == 1).astype(int)
+df_clean['has_invalid_ip'] = (df_clean['valid_ip'] == 'missing').astype(int)
+
+for col in ['amount_vs_avg_ratio', 'time_since_last_txn', 'user_avg_spend']:
+    df_clean[col] = df_clean[col].fillna(0)
+
+print("Feature Engineering Complete.")
+
+
+# Cell 5: Weak Labeling (Self-Learning Setup)
+score = np.zeros(len(df_clean))
+score += df_clean['location_mismatch'] * 2
+score += df_clean['is_high_velocity'] * 3
+score += df_clean['is_new_device'] * 2
+score += df_clean['is_unusual_hour'] * 1
+score += df_clean['has_invalid_ip'] * 3
+score += (df_clean['amount_vs_avg_ratio'] > 3.0).astype(int) * 2
+
+# Threshold for weak labels (fraud = 5+)
+df_clean['weak_label'] = (score >= 5).astype(int)
+fraud_count = df_clean['weak_label'].sum()
+print(f"Generated {fraud_count} pseudo fraud labels ({fraud_count/len(df_clean)*100:.2f}% of data)")
+
+
+# Cell 6: Model Training & Evaluation
+exclude_cols = ['transaction_id', 'user_id', 'clean_timestamp', 'clean_user_location', 'clean_merchant_location', 'device_id', 'valid_ip']
+target_col = 'weak_label'
+
+cat_cols = ['merchant_category', 'device_type', 'payment_method', 'transaction_status']
+for col in cat_cols:
+    le = LabelEncoder()
+    df_clean[col] = le.fit_transform(df_clean[col].astype(str))
+
+features = [c for c in df_clean.columns if c not in exclude_cols + [target_col]]
+X = df_clean[features]
+y = df_clean[target_col]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+print("Training RandomForest Classifer...")
+model = RandomForestClassifier(n_estimators=100, max_depth=10, class_weight='balanced', random_state=42)
+model.fit(X_train, y_train)
+
+preds = model.predict(X_test)
+probs = model.predict_proba(X_test)[:, 1]
+
+print("\n--- Model Evaluation (vs Weak Labels) ---")
+print(f"Precision: {precision_score(y_test, preds):.4f}")
+print(f"Recall:    {recall_score(y_test, preds):.4f}")
+print(f"F1 Score:  {f1_score(y_test, preds):.4f}")
+print(classification_report(y_test, preds))
+
+importances = model.feature_importances_
+feat_imp = pd.DataFrame({'Feature': features, 'Importance': importances}).sort_values(by='Importance', ascending=False)
+print("\nTop 5 Predictive Features:")
+print(feat_imp.head(5).to_string(index=False))
+
+print("\n--- Self-Learning Continuous Loop Simulation ---")
+high_conf_fraud_idx = np.where(probs >= 0.90)[0]
+high_conf_legit_idx = np.where(probs <= 0.10)[0]
+print(f"Discovered {len(high_conf_fraud_idx)} highly confident NEW fraud patterns.")
+print(f"Discovered {len(high_conf_legit_idx)} highly confident NEW legit patterns.")
+print("-> These highly confident predictions will be reinjected into the training pool.")
+

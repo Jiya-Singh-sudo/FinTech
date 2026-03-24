@@ -24,17 +24,14 @@ async def run_predict(file: UploadFile = File(...)):
             return {"error": "Uploaded file is empty"}
 
         # ✅ Call model prediction
-        # predict(df) returns (predictions, probabilities)
-        predictions, probabilities = predict(df)
+        # predict(df) now returns a list of dictionaries with enriched data
+        results = predict(df)
 
-        fraud_detected = int(sum(predictions))
-        total_transactions = int(len(df))
+        fraud_detected = sum(1 for r in results if r['prediction'] == 'fraud')
+        total_transactions = len(results)
         
-        # ✅ Prepare sample (increased limit to support small demo files)
-        sample = [
-            {"prediction": int(p), "confidence": float(c)} 
-            for p, c in zip(predictions[:100], probabilities[:100])
-        ]
+        # ✅ Prepare sample
+        sample = results[:100]
 
         # ✅ Final payload
         response_data = {
@@ -79,15 +76,9 @@ async def get_predict_details(file: UploadFile = File(...)):
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
 
-        predictions, probabilities = predict(df)
+        results = predict(df)
 
-        # ✅ Prepare complete list
-        row_level_results = [
-            {"prediction": int(p), "confidence": float(c)} 
-            for p, c in zip(predictions, probabilities)
-        ]
-
-        return row_level_results
+        return results
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing details: {str(e)}")
